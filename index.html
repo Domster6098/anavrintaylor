@@ -254,6 +254,7 @@
   }
   .time-slot:hover:not(:disabled){ border-color: var(--amethyst); }
   .time-slot:disabled{ opacity:0.2; cursor:default; }
+  .time-slot.taken{ opacity:0.35; text-decoration: line-through; cursor:not-allowed; }
   .time-slot.selected{ background: linear-gradient(135deg, var(--amethyst), #6a3aa0); color:#fff; border-color:transparent; }
 
   .booking-form{ display:flex; flex-direction:column; gap:1.1rem; }
@@ -605,6 +606,7 @@
             <label>Nevypĺňaj: <input name="bot-field" /></label>
           </p>
           <input type="hidden" name="datum" id="fieldDatum" />
+          <input type="hidden" name="datumIso" id="fieldDatumIso" />
           <input type="hidden" name="cas" id="fieldCas" />
           <input type="hidden" name="paypal_order_id" />
 
@@ -666,7 +668,7 @@
 
         <div class="form-success" id="formSuccess">
           <h3>Ďakujem za rezerváciu 🔮</h3>
-          <p>Platbu aj termín som zaznamenala, čoskoro sa ti ozvem s potvrdením.</p>
+          <p>Platbu som zaznamenala a termín je pre teba rezervovaný. Po mojom potvrdení ti príde email s definitívnym potvrdením.</p>
         </div>
       </div>
     </div>
@@ -871,6 +873,7 @@
     const timeGrid = document.getElementById('timeGrid');
     const summary = document.getElementById('selectedSummary');
     const fieldDatum = document.getElementById('fieldDatum');
+    const fieldDatumIso = document.getElementById('fieldDatumIso');
     const fieldCas = document.getElementById('fieldCas');
     const formError = document.getElementById('formError');
 
@@ -881,11 +884,32 @@
     let viewMonth = today.getMonth();
     let selectedDate = null; // Date object
     let selectedTime = null; // "HH:00"
+    let bookedSlots = []; // [{datumIso, cas}, ...] -- obsadené termíny, spoločné pre všetkých
 
     const monthNames = ['Január','Február','Marec','Apríl','Máj','Jún','Júl','August','September','Október','November','December'];
     const hours = [10,11,12,13,14,15,16,17,18,19];
 
     function isSameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+
+    function toIso(date){
+      const y = date.getFullYear();
+      const m = String(date.getMonth()+1).padStart(2,'0');
+      const d = String(date.getDate()).padStart(2,'0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function isSlotBooked(isoDate, timeLabel){
+      return bookedSlots.some(s => s.datumIso === isoDate && s.cas === timeLabel);
+    }
+
+    // stiahni obsadené termíny pri načítaní stránky, nech ich vidí každý návštevník
+    fetch('/.netlify/functions/get-booked-slots')
+      .then(r => r.json())
+      .then(data => {
+        bookedSlots = data.slots || [];
+        if (selectedDate) renderTimeSlots(); // ak už bol vybraný deň, prekresli s aktuálnymi obsadenosťami
+      })
+      .catch(() => {});
 
     function renderCalendar(){
       monthLabel.textContent = monthNames[viewMonth] + ' ' + viewYear;
@@ -939,14 +963,17 @@
       timeGrid.innerHTML = '';
       const isToday = isSameDay(selectedDate, today);
       const nowHour = new Date().getHours();
+      const isoDate = toIso(selectedDate);
       hours.forEach(h => {
         const slot = document.createElement('button');
         slot.type = 'button';
         slot.className = 'time-slot';
         const label = (h < 10 ? '0'+h : h) + ':00';
         slot.textContent = label;
-        if (isToday && h <= nowHour) {
+        const taken = isSlotBooked(isoDate, label);
+        if ((isToday && h <= nowHour) || taken) {
           slot.disabled = true;
+          if (taken) { slot.title = 'Tento termín je už obsadený'; slot.classList.add('taken'); }
         } else {
           slot.addEventListener('click', () => {
             selectedTime = label;
@@ -965,6 +992,7 @@
         summary.textContent = 'Vybraný termín: ' + dateStr + ' o ' + selectedTime;
         summary.classList.add('show');
         fieldDatum.value = dateStr;
+        fieldDatumIso.value = toIso(selectedDate);
         fieldCas.value = selectedTime;
         formError.classList.remove('show');
       } else {
@@ -1065,6 +1093,7 @@
               typ: document.getElementById('typ').selectedOptions[0].textContent,
               sposob: fd.get('sposob'),
               datum: fd.get('datum'),
+              datumIso: fd.get('datumIso'),
               cas: fd.get('cas'),
               poznamka: fd.get('poznamka')
             })
@@ -1079,7 +1108,7 @@
         },
 
         onError: function(err){
-          paymentError.textContent = 'Platba zlyhala, skús to prosím znova.';
+          paymentError.textContent = (err && err.message) ? err.message : 'Platba zlyhala, skús to prosím znova.';
           paymentError.classList.add('show');
         }
 
