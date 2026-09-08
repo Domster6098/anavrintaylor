@@ -7,23 +7,24 @@
 import { getStore } from '@netlify/blobs';
 import crypto from 'node:crypto';
 
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const FROM_EMAIL = process.env.BOOKING_FROM_EMAIL;
 const OWNER_EMAIL = process.env.OWNER_EMAIL || 'anavrintaylor+rezervacie@slovanet.net';
 
 async function sendEmail(to, subject, html) {
-  if (!SENDGRID_API_KEY || !FROM_EMAIL) return; // ešte nenastavené -> preskočí sa potichu
-  await fetch('https://api.sendgrid.com/v3/mail/send', {
+  if (!BREVO_API_KEY || !FROM_EMAIL) return; // ešte nenastavené -> preskočí sa potichu
+  await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${SENDGRID_API_KEY}`,
+      'api-key': BREVO_API_KEY,
       'Content-Type': 'application/json',
+      Accept: 'application/json',
     },
     body: JSON.stringify({
-      personalizations: [{ to: [{ email: to }] }],
-      from: { email: FROM_EMAIL, name: 'Anavrin Taylor' },
+      sender: { email: FROM_EMAIL, name: 'Anavrin Taylor' },
+      to: [{ email: to }],
       subject,
-      content: [{ type: 'text/html', value: html }],
+      htmlContent: html,
     }),
   });
 }
