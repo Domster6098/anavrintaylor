@@ -74,18 +74,18 @@ V súbore `index.html` nájdi riadok so `YOUR_PAYPAL_CLIENT_ID` (je v `<head>`) 
 
 ---
 
-## Krok 6 — Nastavenie emailov (SendGrid)
+## Krok 6 — Nastavenie emailov (Brevo)
 
-Emaily (nová rezervácia pre Anavrin + potvrdenie/zamietnutie pre zákazníka) posiela služba **SendGrid** (zadarmo do 100 emailov/deň).
+Emaily (nová rezervácia pre Anavrin + potvrdenie/zamietnutie pre zákazníka) posiela služba **Brevo** (predtým Sendinblue) — má **trvalý free plán, 300 emailov/deň zadarmo navždy**, bez kreditky.
 
-1. Zaregistruj sa na https://signup.sendgrid.com/
-2. V SendGrid choď na **Settings -> Sender Authentication -> Single Sender Verification**
-3. Over si adresu `anavrintaylor+rezervacie@slovanet.net` (alebo inú, ktorú chceš používať ako odosielaciu) — príde na ňu potvrdzovací email, treba kliknúť na link v ňom
-4. V SendGrid choď na **Settings -> API Keys -> Create API Key** (stačí "Restricted Access" s právom "Mail Send")
+1. Zaregistruj sa na https://app.brevo.com/account/register
+2. V Brevo choď na **Settings (ozubené koliesko vpravo hore) -> Senders, Domains & Dedicated IPs -> Senders -> Add a sender**
+3. Zadaj `anavrintaylor+rezervacie@slovanet.net` (alebo inú adresu, ktorú chceš používať ako odosielaciu) — príde na ňu potvrdzovací email, treba kliknúť na link v ňom
+4. V Brevo choď na **Settings -> SMTP & API -> API Keys -> Generate a new API key**
 5. Skopíruj si vygenerovaný kľúč (zobrazí sa len raz!)
 
 V Netlify (**Site configuration -> Environment variables**) pridaj:
-- `SENDGRID_API_KEY` = (kľúč z kroku 5)
+- `BREVO_API_KEY` = (kľúč z kroku 5)
 - `BOOKING_FROM_EMAIL` = (email, ktorý si overil/a v kroku 3, napr. `anavrintaylor+rezervacie@slovanet.net`)
 - `OWNER_EMAIL` = kam majú chodiť upozornenia o nových rezerváciách (môže byť rovnaký ako vyššie)
 
