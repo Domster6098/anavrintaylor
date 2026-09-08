@@ -1,11 +1,14 @@
-# Návod na spustenie stránky s reálnou PayPal platbou
+# Návod na spustenie stránky s reálnou PayPal platbou a rezerváciami
 
 ## Čo tento systém robí
-1. Klient vyplní rezervačný formulár a vyberie termín v kalendári.
+1. Klient vyplní rezervačný formulár a vyberie termín v kalendári (obsadené termíny sú mu rovno zošednuté — vidí ich takto úplne každý návštevník).
 2. Klikne "Pokračovať k platbe" -> zobrazí sa PayPal tlačidlo (žiadna platba ešte neprebehla).
 3. Zaplatí cez PayPal.
 4. Serverová funkcia (`capture-order`) si u PayPal **overí**, že platba naozaj prebehla (status `COMPLETED`).
-5. Len ak je to potvrdené, rezervácia sa zaregistruje a **tebe/Anavrin príde email** (cez Netlify Forms).
+5. Termín sa hneď zapíše ako obsadený (Netlify Blobs) — takže sa nedá dvakrát predať.
+6. Anavrin príde email s tlačidlami **Potvrdiť** / **Zamietnuť**.
+   - **Potvrdiť** -> zákazníkovi automaticky odíde potvrdzovací email, termín ostáva obsadený.
+   - **Zamietnuť** -> zákazníkovi odíde ospravedlnenie, termín sa uvoľní späť pre ostatných.
 
 Cenu (25 € / 5 €) určuje server podľa vybraného typu služby — klient ju teda nevie sfalšovať úpravou stránky.
 
@@ -71,11 +74,24 @@ V súbore `index.html` nájdi riadok so `YOUR_PAYPAL_CLIENT_ID` (je v `<head>`) 
 
 ---
 
-## Krok 6 — Zapnutie emailových upozornení na rezervácie
+## Krok 6 — Nastavenie emailov (SendGrid)
 
-1. V Netlify projekte choď na **Site configuration** -> **Forms** -> **Form notifications**
-2. Klikni **Add notification** -> **Email notification**
-3. Zadaj email, kam majú chodiť upozornenia o nových rezerváciách (napr. Anavrin email)
+Emaily (nová rezervácia pre Anavrin + potvrdenie/zamietnutie pre zákazníka) posiela služba **SendGrid** (zadarmo do 100 emailov/deň).
+
+1. Zaregistruj sa na https://signup.sendgrid.com/
+2. V SendGrid choď na **Settings -> Sender Authentication -> Single Sender Verification**
+3. Over si adresu `anavrintaylor+rezervacie@slovanet.net` (alebo inú, ktorú chceš používať ako odosielaciu) — príde na ňu potvrdzovací email, treba kliknúť na link v ňom
+4. V SendGrid choď na **Settings -> API Keys -> Create API Key** (stačí "Restricted Access" s právom "Mail Send")
+5. Skopíruj si vygenerovaný kľúč (zobrazí sa len raz!)
+
+V Netlify (**Site configuration -> Environment variables**) pridaj:
+- `SENDGRID_API_KEY` = (kľúč z kroku 5)
+- `BOOKING_FROM_EMAIL` = (email, ktorý si overil/a v kroku 3, napr. `anavrintaylor+rezervacie@slovanet.net`)
+- `OWNER_EMAIL` = kam majú chodiť upozornenia o nových rezerváciách (môže byť rovnaký ako vyššie)
+
+Po pridaní premenných spravi **Deploys -> Trigger deploy -> Deploy site**, nech sa načítajú.
+
+**Poznámka:** Pokiaľ tieto premenné ešte nenastavíš, systém bude aj tak fungovať (platby a blokovanie termínov v kalendári idú nezávisle od emailov) — len ti/zákazníkovi nebudú chodiť emaily, kým to nedokončíš.
 
 ---
 
@@ -83,6 +99,8 @@ V súbore `index.html` nájdi riadok so `YOUR_PAYPAL_CLIENT_ID` (je v `<head>`) 
 
 Skús si spraviť skúšobnú rezerváciu sám/sama (malú sumu 5 €) a over si, že:
 - PayPal platba prebehla
-- Prišiel ti email cez Netlify (Forms -> Submissions to tiež uvidíš)
+- Prišiel ti email s tlačidlami Potvrdiť/Zamietnuť
+- Po kliknutí na "Potvrdiť" príde na zadaný zákaznícky email potvrdenie
+- Termín sa v kalendári zobrazuje ako obsadený (skús si otvoriť stránku napr. v inom prehliadači/inkognito)
 
 Ak niečo nesedí, najčastejšie príčiny sú: zlé/chýbajúce API kľúče v Environment variables, alebo zabudnutý redeploy po ich pridaní.
