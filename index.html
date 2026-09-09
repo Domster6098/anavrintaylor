@@ -6,7 +6,8 @@
 <title>Anavrin Taylor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500;1,600&family=Jost:wght@300;400;500;600&family=Space+Mono:wght@400;700&family=Anton&family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://www.paypal.com/sdk/js?client-id=YOUR_PAYPAL_CLIENT_ID&currency=EUR&locale=sk_SK"></script>
+<script src="https://www.paypal.com/sdk/js?client-id=YOUR_PAYPAL_CLIENT_ID&currency=EUR&locale=sk_SK&components=buttons,googlepay"></script>
+<script src="https://pay.google.com/gp/p/js/pay.js" async></script>
 <style>
   :root{
     --void: #100819;
@@ -662,6 +663,7 @@
           <h3>Platba za termín</h3>
           <p id="paymentSummaryText"></p>
           <div id="paypal-button-container" style="max-width:320px; margin:1.2rem auto 0;"></div>
+          <div id="googlepay-button-container" style="max-width:320px; margin:0.8rem auto 0;"></div>
           <p class="form-error" id="paymentError" style="margin-top:0.8rem;"></p>
           <button type="button" class="btn" id="backToFormBtn" style="justify-content:center; margin-top:1rem;">Späť na formulár</button>
         </div>
@@ -1044,6 +1046,7 @@
       paymentStep.classList.add('show');
       paymentStep.scrollIntoView({ behavior: 'smooth', block: 'center' });
       renderPaypalButtons();
+      setupGooglePay();
     });
 
     // back to form (nothing was charged or submitted)
@@ -1113,6 +1116,110 @@
         }
 
       }).render('#paypal-button-container');
+    }
+
+    // ---- Google Pay (cez PayPal ako spracovateľa, rovnaké overenie na serveri) ----
+    let googlePayRendered = false;
+
+    async function setupGooglePay(retriesLeft){
+      if (retriesLeft === undefined) retriesLeft = 6;
+      if (googlePayRendered) return;
+      if (typeof paypal === 'undefined' || !paypal.Googlepay || typeof google === 'undefined' || !google.payments) {
+        if (retriesLeft > 0) {
+          setTimeout(() => setupGooglePay(retriesLeft - 1), 500);
+        }
+        return; // Google Pay skript sa ešte nenačítal alebo nie je podporovaný -> jednoducho sa nezobrazí
+      }
+
+      try {
+        const googlePayConfig = await paypal.Googlepay().config();
+        const { allowedPaymentMethods, apiVersion, apiVersionMinor } = googlePayConfig;
+
+        const paymentsClient = new google.payments.api.PaymentsClient({ environment: 'PRODUCTION' });
+
+        const isReadyToPayRequest = { apiVersion, apiVersionMinor, allowedPaymentMethods };
+        const readyResult = await paymentsClient.isReadyToPay(isReadyToPayRequest);
+        if (!readyResult.paymentMethodPresent) return; // zariadenie/prehliadač Google Pay nepodporuje
+
+        googlePayRendered = true;
+
+        const button = paymentsClient.createButton({
+          onClick: onGooglePayClicked,
+          allowedPaymentMethods,
+          buttonColor: 'black',
+          buttonSizeMode: 'fill',
+        });
+        document.getElementById('googlepay-button-container').appendChild(button);
+
+        async function onGooglePayClicked(){
+          paymentError.classList.remove('show');
+          try {
+            const priceMap = { vyklad: '25.00', kyvadlo: '5.00' };
+            const typValue = document.getElementById('typ').value;
+
+            const paymentDataRequest = Object.assign({}, googlePayConfig, {
+              transactionInfo: {
+                totalPriceStatus: 'FINAL',
+                totalPrice: priceMap[typValue] || '25.00',
+                currencyCode: 'EUR',
+                countryCode: 'SK',
+              },
+            });
+
+            const paymentData = await paymentsClient.loadPaymentData(paymentDataRequest);
+
+            // 1) server vytvorí objednávku a SÁM určí cenu (rovnaká funkcia ako pri PayPal tlačidle)
+            const orderRes = await fetch('/.netlify/functions/create-order', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ typ: typValue }),
+            });
+            const orderData = await orderRes.json();
+            if (orderData.error) throw new Error(orderData.error);
+            const orderId = orderData.id;
+
+            // 2) potvrdenie platby cez Google Pay dáta
+            const { status } = await paypal.Googlepay().confirmOrder({
+              orderId,
+              paymentMethodData: paymentData.paymentMethodData,
+            });
+
+            if (status === 'PAYER_ACTION_REQUIRED') {
+              await paypal.Googlepay().initiatePayerAction({ orderId });
+            }
+
+            // 3) rovnaká serverová funkcia ako pri PayPal tlačidle: reálne OVERÍ platbu u PayPal a až potom zaregistruje termín
+            const fd = new FormData(form);
+            const captureRes = await fetch('/.netlify/functions/capture-order', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                orderID: orderId,
+                meno: fd.get('meno'),
+                email: fd.get('email'),
+                telefon: fd.get('telefon'),
+                typ: document.getElementById('typ').selectedOptions[0].textContent,
+                sposob: fd.get('sposob'),
+                datum: fd.get('datum'),
+                datumIso: fd.get('datumIso'),
+                cas: fd.get('cas'),
+                poznamka: fd.get('poznamka'),
+              }),
+            });
+            const result = await captureRes.json();
+            if (!result.success) throw new Error(result.error || 'Platbu sa nepodarilo overiť.');
+
+            paymentStep.classList.remove('show');
+            successBox.classList.add('show');
+            successBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } catch (err) {
+            paymentError.textContent = (err && err.message) ? err.message : 'Platba cez Google Pay zlyhala, skús to prosím znova.';
+            paymentError.classList.add('show');
+          }
+        }
+      } catch (err) {
+        // Google Pay nie je dostupný -> stránka jednoducho ukáže len PayPal/kartu, nič sa nerozbije
+      }
     }
   })();
 
